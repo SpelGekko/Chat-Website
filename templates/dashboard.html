@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="home-container">
+    <h2>Welcome, {{ name }}</h2>
+    <form method="POST">
+        <label for="code">Room Code:</label>
+        <input type="text" id="code" name="code">
+        <button type="submit" name="join" value="join">Join Room</button>
+        <button type="submit" name="create" value="create">Create Room</button>
+    </form>
+    {% if error %}
+    <p style="color: red;">{{ error }}</p>
+    {% endif %}
+    <a href="{{ url_for('logout') }}">Logout</a>
+</div>
+{% endblock %}

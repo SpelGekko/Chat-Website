@@ -7,6 +7,7 @@
         <input type="text" rows="3" id="message" placeholder="Type your message here" />
         <button type="button" name="send" id="send-btn" onClick="sendMessage()">Send</button>
     </div>
+    <p>Back to  <a href="{{ url_for('dashboard') }}">Dashboard</a></p>
 </div>
 <script type="text/javascript">
     var socketio = io();

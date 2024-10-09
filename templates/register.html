@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="register-container">
+    <h2>Register</h2>
+    <form id="register-form" method="POST">
+        {{ form.hidden_tag() }}
+        <label for="username">Username:</label>
+        {{ form.username }}
+        <label for="password">Password:</label>
+        {{ form.password }}
+        {{ form.submit }}
+    </form>
+    <p>Already have an account? Go back to <a href="{{ url_for('login') }}">Login</a></p>
+</div>
+<script src="{{url_for('static', filename='js/register.js')}}"></script>
+{% endblock %}
