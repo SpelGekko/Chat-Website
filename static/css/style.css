@@ -92,15 +92,15 @@ html, body {
     width: 100%;
 }
 
-.login-container {
+.login-container, .home-container, .register-container {
   background: rgba(255, 255, 255, 0.21);
   border-radius: 16px;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
   backdrop-filter: blur(9.2px);
   -webkit-backdrop-filter: blur(9.2px);
   border: 1px solid rgba(255, 255, 255, 0.19);
-  height: 20vh;
-  width: 30vw;
+  height: auto;
+  width: auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
