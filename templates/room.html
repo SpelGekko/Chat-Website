@@ -7,11 +7,18 @@
         <input type="text" rows="3" id="message" placeholder="Type your message here" />
         <button type="button" name="send" id="send-btn" onClick="sendMessage()">Send</button>
     </div>
+    {% if session['username'] == rooms[code]['creator'] %}
+    <form method="POST" action="{{ url_for('delete_room', room_code=code) }}">
+        {{ form.hidden_tag() }}
+        <button type="submit">Delete Room</button>
+    </form>
+    {% endif %}
     <p>Back to  <a href="{{ url_for('dashboard') }}">Dashboard</a></p>
 </div>
 <script type="text/javascript">
     var socketio = io();
 
+    const roomCode = "{{ code }}";
     const messages = document.getElementById('messages');
 
     const createMessage = (name, msg, timestamp) => {
@@ -28,14 +35,24 @@
         messages.innerHTML += content;
     }
 
+    // Join the room
+    socketio.emit('join', { room: roomCode });
+
     socketio.on('message', (data) => {
         createMessage(data.name, data.message, data.timestamp);
+    });
+
+    socketio.on('room_deleted', (data) => {
+        if (data.room === roomCode) {
+            alert('This room has been deleted. You will be redirected to the dashboard.');
+            window.location.href = "{{ url_for('dashboard') }}";
+        }
     });
 
     const sendMessage = () => {
         const message = document.getElementById('message')
         if (message.value == "") return;
-        socketio.emit('message', {message: message.value});
+        socketio.emit('message', { room: roomCode, message: message.value });
         message.value = "";
     }
 </script>
