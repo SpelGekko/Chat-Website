@@ -3,41 +3,107 @@ from flask_socketio import join_room, leave_room, send, SocketIO
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf import FlaskForm, CSRFProtect
 from wtforms import StringField, PasswordField, SubmitField
-from wtforms.validators import DataRequired
+from wtforms.validators import DataRequired, Email
 from werkzeug.security import generate_password_hash, check_password_hash
 import random
 from string import ascii_letters
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
 from waitress import serve
+from flask_cors import CORS
+import jwt
+from flask_mail import Mail, Message
 
 # Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "default_secret_key")
+app.config["SECRET_KEY"] = str(os.environ.get("SECRET_KEY"))
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("SQLALCHEMY_DATABASE_URI", "sqlite:///chat.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-socketio = SocketIO(app)
+
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.example.com')
+app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 465))
+app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', 'false').lower() in ['true', '1', 't']
+app.config['MAIL_USE_SSL'] = os.environ.get('MAIL_USE_SSL', 'true').lower() in ['true', '1', 't']
+app.config['MAIL_USERNAME'] = os.environ.get('EMAIL_USER', 'your-email@example.com')
+app.config['MAIL_PASSWORD'] = os.environ.get('EMAIL_PASS', 'your-email-password')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'your-email@example.com')
+
+mail = Mail(app)
+
+# Enable CORS for your Flask app
+CORS(app, resources={r"/*": {"origins": ["https://chat.blackstonebloods.com"]}})
+
+# Initialize SocketIO with CORS allowed origins
+socketio = SocketIO(app, cors_allowed_origins=["https://chat.blackstonebloods.com"])
 db = SQLAlchemy(app)
 csrf = CSRFProtect(app)
-
 rooms = {}
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    email_verified = db.Column(db.Boolean, default=False)
+    verification_token = db.Column(db.String(120), nullable=True)
 
+    def generate_verification_token(self, expires_sec=3600):
+        payload = {
+            'user_id': self.id,
+            'exp': datetime.utcnow() + timedelta(seconds=expires_sec)
+        }
+        token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+        return token
+
+    @staticmethod
+    def verify_verification_token(token):
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload['user_id']
+        except jwt.ExpiredSignatureError:
+            return None  # Token has expired
+        except jwt.InvalidTokenError:
+            return None  # Invalid token
+        return User.query.get(user_id)
+
+class TempUser(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    verification_token = db.Column(db.String(120), nullable=True)
+
+    def generate_verification_token(self, expires_sec=3600):
+        payload = {
+            'user_id': self.id,
+            'exp': datetime.utcnow() + timedelta(seconds=expires_sec)
+        }
+        token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+        return token
+
+    @staticmethod
+    def verify_verification_token(token):
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload['user_id']
+        except jwt.ExpiredSignatureError:
+            return None  # Token has expired
+        except jwt.InvalidTokenError:
+            return None  # Invalid token
+        return TempUser.query.get(user_id)
+    
 class LoginForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])
     password = PasswordField('Password', validators=[DataRequired()])
     submit = SubmitField('Login')
 
-class RegisterForm(FlaskForm):
+class RegistrationForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])
     password = PasswordField('Password', validators=[DataRequired()])
+    email = StringField('Email', validators=[DataRequired(), Email()])  # Add email field
     submit = SubmitField('Register')
 
 class CSRFForm(FlaskForm):
@@ -146,40 +212,82 @@ def login():
             print("Debug: Invalid username or password")
             return render_template('login.html', form=form, error='Invalid username or password')
         
+        if not user.email_verified:
+            print("Debug: Email not verified")
+            return render_template('login.html', form=form, error='Please verify your email before logging in')
+
         session['username'] = username
         flash('Logged in successfully')
         return redirect(url_for('dashboard'))
     
     return render_template('login.html', form=form)
 
-@app.route('/register', methods=['GET', 'POST'])
+@app.route("/register", methods=["GET", "POST"])
 def register():
-    form = RegisterForm()
+    form = RegistrationForm()
     if form.validate_on_submit():
         username = form.username.data
-        password = form.password.data
+        password = generate_password_hash(form.password.data)
+        email = form.email.data
 
-        if not username or not password:
-            return render_template('register.html', form=form, error='Please fill in both fields')
-        
-        password_hash = generate_password_hash(password)
-        existing_user = User.query.filter_by(username=username).first()
-
+        existing_user = User.query.filter((User.username == username) | (User.email == email)).first()
         if existing_user:
-            return render_template('register.html', form=form, error='Username already exists')
-        
-        new_user = User(username=username, password=password_hash)
-        db.session.add(new_user)
-        db.session.commit()
+            flash("Username or email already exists.")
+            return redirect(url_for("register"))
 
-        flash('Account created successfully')
-        return redirect(url_for('login'))
+        existing_temp_user = TempUser.query.filter((TempUser.username == username) | (TempUser.email == email)).first()
+        if existing_temp_user:
+            flash("Username or email already exists in temporary users.")
+            return redirect(url_for("register"))
 
-    return render_template('register.html', form=form)
+        new_temp_user = TempUser(username=username, password=password, email=email)
+        db.session.add(new_temp_user)
+        db.session.commit()  # Commit the temporary user to the database to get the user ID
+
+        # Generate verification token
+        new_temp_user.verification_token = new_temp_user.generate_verification_token()
+        db.session.commit()  # Commit the token to the database
+
+        # Send verification email
+        token = new_temp_user.verification_token
+        msg = Message('Email Verification', sender=app.config['MAIL_DEFAULT_SENDER'], recipients=[email])
+        msg.body = f'''To verify your email, visit the following link:
+{url_for('verify_email', token=token, _external=True)}
+
+If you did not make this request then simply ignore this email.
+'''
+        try:
+            mail.send(msg)
+            flash("Registration successful. Please check your email to verify your account.", 'info')
+        except Exception as e:
+            print(f"An error occurred while sending the email: {str(e)}")  # Debug statement
+            db.session.delete(new_temp_user)
+            db.session.commit()
+            return redirect(url_for("register"))
+
+        return redirect(url_for("login"))
+
+    return render_template("register.html", form=form)
 
 @app.route('/logout')
 def logout():
     session.clear()
+    return redirect(url_for('login'))
+
+@app.route('/verify_email/<token>')
+def verify_email(token):
+    temp_user = TempUser.verify_verification_token(token)
+    if temp_user is None:
+        flash('The verification link is invalid or has expired.', 'danger')
+        return redirect(url_for('register'))
+
+    # Move user from TempUser to User
+    new_user = User(username=temp_user.username, password=temp_user.password, email=temp_user.email, email_verified=True)
+    db.session.add(new_user)
+    db.session.delete(temp_user)
+    db.session.commit()
+
+    flash('Your email has been verified! You can now log in.', 'success')
     return redirect(url_for('login'))
 
 @socketio.on("join")
