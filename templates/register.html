@@ -2,18 +2,24 @@
 
 {% block content %}
 <div class="register-container">
-    <h2>Register</h2>
-    <form id="register-form" method="POST">
+    <p class="title">Register</p>
+    <form id="register-form" method="POST" class="form">
         {{ form.hidden_tag() }}
-        <label for="username">Username:</label>
-        {{ form.username }}
-        <label for="password">Password:</label>
-        {{ form.password }}
-        {{ form.submit }}
-        <label for="email">Email:</label>
-        {{ form.email }}
+        <span class="input-span">
+            <label for="username" class="label">Username</label>
+            {{ form.username }}
+        </span>
+        <span class="input-span">
+            <label for="password" class="label">Password</label>
+            {{ form.password }}
+        </span>
+        <span class="input-span">
+            <label for="email" class="label">Email</label>
+            {{ form.email }}
+        </span>
+        <input class="submit" type="submit" value="Register" />
     </form>
-    <p>Already have an account? Go back to <a href="{{ url_for('login') }}">Login</a></p>
+    <span class="span">Already have an account? Go back to <a href="{{ url_for('login') }}">Login</a></span>
 </div>
-<script src="{{url_for('static', filename='js/register.js')}}"></script>
+<script src="{{ url_for('static', filename='js/register.js') }}"></script>
 {% endblock %}

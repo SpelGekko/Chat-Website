@@ -1,19 +1,23 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="message-box">
-    <h2>Chat Room: {{code}}</h2>
+    <a href="{{ url_for('dashboard') }}" class="back-to-dashboard">
+        <span>&larr;</span> Back to Dashboard
+    </a>
+    <h2 class="title">Chat Room: {{ code }}</h2>
     <div class="messages" id="messages"></div>
-    <div class="inputs">
-        <input type="text" rows="3" id="message" placeholder="Type your message here" />
-        <button type="button" name="send" id="send-btn" onClick="sendMessage()">Send</button>
-    </div>
+    <form class="inputs" id="chat-form">
+        <div class="message-input-card">
+            <input type="text" id="message" placeholder="Type your message here" class="message-input" />
+        </div>
+        <button type="submit" class="send-button">Send</button>
+    </form>
     {% if session['username'] == rooms[code]['creator'] %}
-    <form method="POST" action="{{ url_for('delete_room', room_code=code) }}">
+    <form method="POST" action="{{ url_for('delete_room', room_code=code) }}" class="form">
         {{ form.hidden_tag() }}
-        <button type="submit">Delete Room</button>
+        <button type="submit" class="submit">Delete Room</button>
     </form>
     {% endif %}
-    <p>Back to  <a href="{{ url_for('dashboard') }}">Dashboard</a></p>
 </div>
 <script type="text/javascript">
     var socketio = io();
@@ -50,16 +54,20 @@
     });
 
     const sendMessage = () => {
-        const message = document.getElementById('message')
+        const message = document.getElementById('message');
         if (message.value == "") return;
         socketio.emit('message', { room: roomCode, message: message.value });
         message.value = "";
     }
+
+    document.getElementById('chat-form').addEventListener('submit', function(event) {
+        event.preventDefault();
+        sendMessage();
+    });
 </script>
 {% for msg in messages %}
     <script type="text/javascript">
-        createMessage('{{msg.name}}', '{{msg.message}}', '{{msg.timestamp}}');
+        createMessage('{{ msg.name }}', '{{ msg.message }}', '{{ msg.timestamp }}');
     </script>
 {% endfor %}
-
 {% endblock %}

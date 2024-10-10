@@ -1,14 +1,16 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="home-container">
-    <h2>Welcome, {{ name }}</h2>
-    <form method="POST">
+<div class="dashboard-container">
+    <p class="title">Welcome, {{ name }}</p>
+    <form method="POST" class="form">
         {{ form.hidden_tag() }}
-        <label for="code">Room Code:</label>
-        <input type="text" id="code" name="code">
-        <button type="submit" name="join" value="join">Join Room</button>
-        <button type="submit" name="create" value="create">Create Room</button>
+        <span class="input-span">
+            <label for="code" class="label">Room Code:</label>
+            <input type="text" id="code" name="code" class="form-control">
+        </span>
+        <input class="submit" type="submit" name="join" value="Join Room">
+        <input class="submit" type="submit" name="create" value="Create Room">
     </form>
     {% if error %}
     <p style="color: red;">{{ error }}</p>
