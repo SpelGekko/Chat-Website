@@ -18,51 +18,73 @@
         <button type="submit" class="submit">Delete Room</button>
     </form>
     {% endif %}
+    <div class="users" id="users">
+        <h3>Users in this room:</h3>
+        <ul id="user-list">
+            <!-- User list will be populated here -->
+        </ul>
+    </div>
 </div>
 <script type="text/javascript">
-    var socketio = io();
+    document.addEventListener('DOMContentLoaded', function() {
+        var socketio = io();
 
-    const roomCode = "{{ code }}";
-    const messages = document.getElementById('messages');
+        const roomCode = "{{ code }}";
+        const messages = document.getElementById('messages');
+        const userList = document.getElementById('user-list');
 
-    const createMessage = (name, msg, timestamp) => {
-        const content = `
-        <div class="text">
-            <span>
-                <strong> ${name} </strong>: ${msg}
-            </span>
-            <span class="muted">
-                ${timestamp}
-            </span>
-        </div>
-        `
-        messages.innerHTML += content;
-    }
+        const createMessage = (name, msg, timestamp) => {
+            const content = `
+            <div class="text">
+                <span>
+                    <strong> ${name} </strong>: ${msg}
+                </span>
+                <span class="muted">
+                    ${timestamp}
+                </span>
+            </div>
+            `;
+            messages.innerHTML += content;
+        };
 
-    // Join the room
-    socketio.emit('join', { room: roomCode });
+        const updateUserList = (users) => {
+            userList.innerHTML = '';
+            users.forEach(user => {
+                const userItem = document.createElement('li');
+                userItem.textContent = user;
+                userList.appendChild(userItem);
+            });
+        };
 
-    socketio.on('message', (data) => {
-        createMessage(data.name, data.message, data.timestamp);
-    });
+        // Join the room
+        socketio.emit('join', { room: roomCode });
 
-    socketio.on('room_deleted', (data) => {
-        if (data.room === roomCode) {
-            alert('This room has been deleted. You will be redirected to the dashboard.');
-            window.location.href = "{{ url_for('dashboard') }}";
-        }
-    });
+        socketio.on('message', (data) => {
+            createMessage(data.name, data.message, data.timestamp);
+        });
 
-    const sendMessage = () => {
-        const message = document.getElementById('message');
-        if (message.value == "") return;
-        socketio.emit('message', { room: roomCode, message: message.value });
-        message.value = "";
-    }
+        socketio.on('user_list', (users) => {
+            updateUserList(users);
+        });
 
-    document.getElementById('chat-form').addEventListener('submit', function(event) {
-        event.preventDefault();
-        sendMessage();
+        socketio.on('room_deleted', (data) => {
+            if (data.room === roomCode) {
+                alert('This room has been deleted. You will be redirected to the dashboard.');
+                window.location.href = "{{ url_for('dashboard') }}";
+            }
+        });
+
+        const sendMessage = () => {
+            const message = document.getElementById('message');
+            if (message.value == "") return;
+            socketio.emit('message', { room: roomCode, message: message.value });
+            message.value = "";
+        };
+
+        document.getElementById('chat-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            sendMessage();
+        });
     });
 </script>
 {% for msg in messages %}

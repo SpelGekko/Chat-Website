@@ -13,7 +13,7 @@
             <label for="password" class="label">Password</label>
             {{ form.password }}
         </span>
-        <span class="span"><a href="#">Forgot password?</a></span>
+        <span class="span"><a href="{{ url_for('forgot_password') }}">Forgot password?</a></span>
         <input class="submit" type="submit" value="Log in" />
     </form>
     <span class="span">Don't have an account? <a rel="noopener noreferrer" href="{{ url_for('register') }}">Sign up</a></span>

@@ -1,5 +1,5 @@
-from flask import Flask, render_template, request, session, redirect, url_for, flash
-from flask_socketio import join_room, leave_room, send, SocketIO
+from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify
+from flask_socketio import join_room, leave_room, send, SocketIO, emit
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf import FlaskForm, CSRFProtect
 from wtforms import StringField, PasswordField, SubmitField
@@ -14,6 +14,7 @@ from waitress import serve
 from flask_cors import CORS
 import jwt
 from flask_mail import Mail, Message
+from flask_talisman import Talisman
 
 # Load environment variables from .env file
 load_dotenv()
@@ -68,6 +69,25 @@ class User(db.Model):
         except jwt.InvalidTokenError:
             return None  # Invalid token
         return User.query.get(user_id)
+    
+    def generate_reset_token(self, expires_sec=3600):
+        payload = {
+            'user_id': self.id,
+            'exp': datetime.utcnow() + timedelta(seconds=expires_sec)
+        }
+        token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+        return token
+
+    @staticmethod
+    def verify_reset_token(token):
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            user_id = payload['user_id']
+        except jwt.ExpiredSignatureError:
+            return None  # Token has expired
+        except jwt.InvalidTokenError:
+            return None  # Invalid token
+        return User.query.get(user_id)
 
 class TempUser(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -94,7 +114,7 @@ class TempUser(db.Model):
         except jwt.InvalidTokenError:
             return None  # Invalid token
         return TempUser.query.get(user_id)
-    
+       
 class LoginForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])
     password = PasswordField('Password', validators=[DataRequired()])
@@ -106,8 +126,16 @@ class RegistrationForm(FlaskForm):
     email = StringField('Email', validators=[DataRequired(), Email()])  # Add email field
     submit = SubmitField('Register')
 
+class ForgotPasswordForm(FlaskForm):
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    submit = SubmitField('Send Reset Link')
+
 class CSRFForm(FlaskForm):
     pass
+
+class ResetPasswordForm(FlaskForm):
+    password = PasswordField('New Password', validators=[DataRequired()])
+    submit = SubmitField('Reset Password')
 
 def generate_code(length):
     while True:
@@ -269,6 +297,47 @@ If you did not make this request then simply ignore this email.
 
     return render_template("register.html", form=form)
 
+@app.route('/forgot_password', methods=['GET', 'POST'])
+def forgot_password():
+    form = ForgotPasswordForm()
+    if form.validate_on_submit():
+        email = form.email.data
+        user = User.query.filter_by(email=email).first()
+        if user:
+            token = user.generate_reset_token()
+            msg = Message('Password Reset Request', sender=app.config['MAIL_DEFAULT_SENDER'], recipients=[email])
+            msg.body = f'''To reset your password, visit the following link:
+{url_for('reset_password', token=token, _external=True)}
+
+If you did not make this request then simply ignore this email.
+'''
+            try:
+                mail.send(msg)
+                flash('If an account with that email exists, a password reset link has been sent.', 'info')
+            except Exception as e:
+                print(f"An error occurred while sending the email: {str(e)}")  # Debug statement
+                flash('An error occurred while sending the email. Please try again later.', 'danger')
+        else:
+            flash('If an account with that email exists, a password reset link has been sent.', 'info')
+        return redirect(url_for('login'))
+    return render_template('forgot_password.html', form=form)
+
+@app.route('/reset_password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    form = ResetPasswordForm()
+    user = User.verify_reset_token(token)
+    if not user:
+        flash('The password reset link is invalid or has expired.', 'danger')
+        return redirect(url_for('forgot_password'))
+
+    if form.validate_on_submit():
+        user.password = generate_password_hash(form.password.data)
+        db.session.commit()
+        flash('Your password has been updated!', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('reset_password.html', form=form)
+
 @app.route('/logout')
 def logout():
     session.clear()
@@ -296,9 +365,23 @@ def handle_join(data):
     join_room(room)
     name = session.get("username")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    if room not in rooms:
+        rooms[room] = {"members": [], "messages": [], "creator": name}  # Ensure members is a list
+
+    # Debugging output
+    print(f"Room data before joining: {rooms.get(room)}")
+
+    if not isinstance(rooms[room]["members"], list):
+        rooms[room]["members"] = []
+
+    if name not in rooms[room]["members"]:
+        rooms[room]["members"].append(name)
+
     send({"name": name, "message": "joined the room.", "timestamp": timestamp}, to=room)
-    rooms[room]["members"] += 1
+    emit("user_list", rooms[room]["members"], to=room)
     print(f"{name} joined {room} at {timestamp}")
+
 
 @socketio.on("message")
 def handle_message(data):
@@ -319,10 +402,18 @@ def handle_disconnect():
     for room in user_rooms:
         leave_room(room)
         if room in rooms:
-            rooms[room]["members"] -= 1
-            if rooms[room]["members"] <= 0:
+            if name in rooms[room]["members"]:
+                rooms[room]["members"].remove(name)
+            if not rooms[room]["members"]:
                 del rooms[room]
+            else:
+                emit("user_list", rooms[room]["members"], to=room)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         send({"name": name, "message": "left the room.", "timestamp": timestamp}, to=room)
         print(f"{name} left {room} at {timestamp}")
 
+@app.route('/clear_rooms')
+def clear_rooms():
+    global rooms
+    rooms = {}
+    return "Rooms cleared"
